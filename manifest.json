@@ -1,0 +1,113 @@
+{
+  "id": "/app-site-fast/",
+  "name": "Карьер Пистали — Диспетчер",
+  "short_name": "Пистали",
+  "description": "Приложение диспетчерского управления карьером Пистали: учёт экскаваторов и самосвалов, рейсы, тоннаж, ротация водителей, ремонты, топливо и взрывные работы для ночной смены.",
+  "start_url": "/app-site-fast/index.html?source=pwa",
+  "scope": "/app-site-fast/",
+  "lang": "ru",
+  "dir": "ltr",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui",
+    "browser"
+  ],
+  "orientation": "any",
+  "background_color": "#0f1923",
+  "theme_color": "#f0a500",
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "iarc_rating_id": "",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshots/screenshot-mobile.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Диспетчерская панель на телефоне"
+    },
+    {
+      "src": "screenshots/screenshot-wide.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Диспетчерская панель на планшете/ПК"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Активные рейсы",
+      "short_name": "Рейсы",
+      "description": "Перейти к текущим рейсам самосвалов",
+      "url": "/app-site-fast/index.html?view=trips",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Экспорт в Excel",
+      "short_name": "Excel",
+      "description": "Быстрый экспорт данных смены в Excel",
+      "url": "/app-site-fast/index.html?action=export",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Ремонты и техобслуживание",
+      "short_name": "Ремонты",
+      "description": "Журнал ремонтов техники",
+      "url": "/app-site-fast/index.html?view=repairs",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "scope_extensions": [
+    {
+      "origin": "https://mastertimati.infinityfree.io"
+    }
+  ]
+}
