@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Карьер Пистали — GPS</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; text-align: center; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 16px; margin: 12px 0; }
+  .status { font-size: 13px; color: #94a3b8; margin: 8px 0; min-height: 20px; }
+  .ok { color: #22c55e; } .err { color: #ef4444; } .warn { color: #f59e0b; }
+  input, button { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #334155; background: #162032; color: #e2e8f0; font-size: 16px; margin: 6px 0; box-sizing: border-box; }
+  button { background: #f0a500; color: #000; font-weight: 800; border: none; cursor: pointer; }
+  button:active { background: #d97706; }
+  button.stop { background: #ef4444; color: #fff; }
+  h1 { color: #f0a500; font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #64748b; font-size: 12px; margin-bottom: 16px; }
+  .metric { display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 4px; }
+  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e; margin-right:5px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ─── Карта-навигатор ─────────────────────────────────────────────────── */
+  #mapCard { padding: 0; overflow: hidden; position: relative; }
+  #map { width: 100%; height: 42vh; min-height: 260px; background: #0a1420; }
+  .leaflet-container { background: #0a1420; font-family: inherit; }
+  .truck-arrow {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
+  }
+  .truck-arrow svg { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+  #speedBadge {
+    position: absolute; top: 10px; right: 10px; z-index: 500;
+    background: rgba(15,23,42,0.88); border: 1px solid #334155; border-radius: 12px;
+    padding: 8px 14px; text-align: center; backdrop-filter: blur(4px);
+  }
+  #speedBadge .val { font-size: 22px; font-weight: 900; color: #f0a500; line-height: 1; }
+  #speedBadge .unit { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+  #recenterBtn {
+    position: absolute; bottom: 10px; right: 10px; z-index: 500;
+    width: 40px; height: 40px; border-radius: 50%; padding: 0;
+    background: rgba(15,23,42,0.9); border: 1px solid #334155; color: #f0a500;
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+    margin: 0; cursor: pointer;
+  }
+  .event-btn {
+    margin: 0; padding: 14px 8px; border: none; border-radius: 10px;
+    color: #fff; font-size: 13px; font-weight: 800; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: transform 0.15s ease, filter 0.15s ease;
+  }
+  .event-btn:active { transform: scale(0.95); filter: brightness(1.2); }
+
+  /* ─── Заставка при запуске ───────────────────────────────────────────── */
+  #splashOverlay {
+    position: fixed; inset: 0; z-index: 5000;
+    background: radial-gradient(circle at 50% 35%, #1e293b, #05080f 75%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    animation: splashFadeOut 0.6s ease 1.6s forwards;
+  }
+  #splashOverlay .logo { font-size: 52px; animation: splashPulse 1.4s ease-in-out infinite; }
+  #splashOverlay .title { font-size: 20px; font-weight: 900; color: #f0a500; margin-top: 14px; letter-spacing: 0.5px; }
+  #splashOverlay .subtitle { font-size: 12px; color: #64748b; margin-top: 6px; }
+  @keyframes splashPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+  @keyframes splashFadeOut { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+
+  /* ─── Анимация подключения (выезд на трассу) ────────────────────────── */
+  #connectOverlay {
+    position: fixed; inset: 0; z-index: 4000;
+    background: linear-gradient(180deg, #0a1420 0%, #0f1c2e 60%, #16273d 100%);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  #connectOverlay.active { display: flex; }
+  #connectOverlay .plate {
+    background: #f1f5f9; color: #0f172a; font-weight: 900; font-size: 22px;
+    padding: 8px 22px; border-radius: 8px; border: 3px solid #0f172a;
+    margin-bottom: 34px; letter-spacing: 1px;
+  }
+  .road-strip {
+    position: relative; width: 100%; height: 90px;
+    background: #2a2f3a;
+    overflow: hidden;
+    border-top: 3px solid #475569; border-bottom: 3px solid #475569;
+  }
+  .road-strip::before {
+    content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 6px;
+    margin-top: -3px;
+    background-image: repeating-linear-gradient(90deg, #f0a500 0 34px, transparent 34px 64px);
+    animation: roadScroll 0.6s linear infinite;
+  }
+  @keyframes roadScroll { from { background-position-x: 0; } to { background-position-x: -64px; } }
+  .connect-truck {
+    position: absolute; bottom: 14px; left: -80px; font-size: 46px;
+    animation: truckDriveIn 2.1s cubic-bezier(0.22,0.61,0.36,1) forwards;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5));
+  }
+  @keyframes truckDriveIn {
+    0% { left: -80px; transform: scaleX(-1); }
+    75% { left: calc(50% - 23px); transform: scaleX(-1); }
+    100% { left: calc(50% - 23px); transform: scaleX(-1); }
+  }
+  #connectOverlay .connect-status {
+    margin-top: 28px; font-size: 13px; color: #94a3b8; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div id="splashOverlay">
+  <div class="logo">⛏️</div>
+  <div class="title">КАРЬЕР ПИСТАЛИ</div>
+  <div class="subtitle">GPS-трекер водителя</div>
+</div>
+
+<div id="connectOverlay">
+  <div class="plate" id="connectPlate">— — — — —</div>
+  <div class="road-strip"><div class="connect-truck">🚛</div></div>
+  <div class="connect-status"><span class="pulse"></span><span id="connectStatusText">Подключение к трекингу...</span></div>
+</div>
+
+<h1>⛏️ Карьер Пистали</h1>
+<div class="sub">GPS-трекер водителя (v5.0 · авто-восстановление)</div>
+
+<div class="card">
+  <div style="font-size: 11px; color: #64748b; margin-bottom: 6px; text-align: left;">ГОС. НОМЕР МАШИНЫ</div>
+  <input id="deviceId" placeholder="30 290 CCA" autocomplete="off" inputmode="text">
+  <button id="btnStart" onclick="startTracking()">▶️ НАЧАТЬ ТРЕКИНГ</button>
+  <button id="btnStop" class="stop" onclick="stopTracking()" style="display:none;">⏹ СТОП</button>
+</div>
+
+<div class="card" id="mapCard">
+  <div id="map"></div>
+  <div id="speedBadge"><div class="val" id="mapSpeedVal">0</div><div class="unit">км/ч</div></div>
+  <button id="recenterBtn" onclick="recenterMap()">🎯</button>
+</div>
+
+<div class="card" id="eventButtonsCard">
+  <div style="font-size: 11px; color: #64748b; margin-bottom: 8px; text-align: left;">ОТМЕТИТЬ СОБЫТИЕ</div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+    <button class="event-btn" style="background:#7c2d12;" onclick="logEvent('ОТВАЛ')">🏔️ ОТВАЛ</button>
+    <button class="event-btn" style="background:#1e3a5f;" onclick="logEvent('ЗАБОЙ')">⛏️ ЗАБОЙ</button>
+    <button class="event-btn" style="background:#14532d;" onclick="logEvent('ПОГРУЗКА')">📦 ПОГРУЗКА</button>
+    <button class="event-btn" style="background:#581c87;" onclick="logEvent('РАЗВОРОТ')">🔄 РАЗВОРОТ</button>
+  </div>
+  <div id="eventFeedback" style="font-size:12px; margin-top:8px; min-height:16px; text-align:center;"></div>
+</div>
+
+<div class="card">
+  <div class="status" id="status">Ожидание запуска...</div>
+  <div class="metric"><span>📡 Статус сети:</span><span id="netStatus">Online</span></div>
+  <div class="metric"><span>📍 Точность:</span><span id="accStatus">—</span></div>
+  <div class="metric"><span>🚗 Скорость:</span><span id="speedStatus">0 км/ч (Стоит)</span></div>
+  <div class="metric"><span>🔋 Заряд:</span><span id="battStatus">—</span></div>
+  <div class="metric"><span>💡 Экран не гаснет:</span><span id="wakeStatus">выкл</span></div>
+  <div class="metric"><span>⏱ Последняя отправка:</span><span id="lastSentStatus">—</span></div>
+  <div class="metric"><span>🔄 Перезапусков GPS:</span><span id="restartStatus">0</span></div>
+  <div class="metric"><span>💾 В буфере:</span><span id="queueStatus">0 точек</span></div>
+</div>
+
+<div class="card" id="tipCard" style="display:none;">
+  <div style="font-size: 11px; color: #f59e0b; text-align: left; line-height: 1.5;">
+    💡 Слабый сигнал — это нормально, приложение само переподключается.
+    Выйди на улицу или встань у окна, если это в помещении. Ничего нажимать не нужно.
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const API_BASE = "https://mastertimati.infinityfree.io/gps-backend/api";
+const API_KEY = "karyer-pistali-2026-super-secret-key-7f3a9b";
+
+// ─── Карта-навигатор ────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([40.1, 65.3], 16);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  className: 'map-tiles-dark', // затемняем плитки CSS-фильтром ниже, чтобы совпадало с тёмной темой
+}).addTo(map);
+// Затемнение стандартных OSM-плиток под тёмную тему приложения (без своего тайл-сервера).
+const style = document.createElement('style');
+style.textContent = '.map-tiles-dark{filter:invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.7);}';
+document.head.appendChild(style);
+
+const truckIcon = L.divIcon({
+  className: 'truck-arrow',
+  html: `<svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 2 L22 22 L13 17 L4 22 Z" fill="#f0a500" stroke="#0f172a" stroke-width="1.5"/></svg>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+});
+const truckMarker = L.marker([40.1, 65.3], { icon: truckIcon }).addTo(map);
+
+const trailPoints = [];
+const MAX_TRAIL_POINTS = 300; // ~последние несколько км хвоста, чтобы не тормозило на слабых телефонах
+const trail = L.polyline([], { color: '#f0a500', weight: 3, opacity: 0.55, smoothFactor: 1.5 }).addTo(map);
+
+let mapFollowsTruck = true;
+let mapInitialized = false;
+
+function updateMapPosition(lat, lng, heading, speedKmh) {
+  const latLng = [lat, lng];
+  lastGoodPosForMap = latLng;
+  truckMarker.setLatLng(latLng);
+
+  // Поворачиваем стрелку по курсу движения (heading от GPS, 0 = север).
+  // Трогаем transform только у внутреннего SVG, а не у div-обёртки маркера —
+  // ею управляет сам Leaflet (позиционирование на карте), перезаписывать нельзя.
+  if (typeof heading === 'number' && !isNaN(heading)) {
+    const el = truckMarker.getElement();
+    const svgWrap = el && el.querySelector('svg');
+    if (svgWrap) svgWrap.style.transform = `rotate(${heading}deg)`;
+  }
+
+  trailPoints.push(latLng);
+  if (trailPoints.length > MAX_TRAIL_POINTS) trailPoints.shift();
+  trail.setLatLngs(trailPoints);
+
+  document.getElementById('mapSpeedVal').textContent = speedKmh;
+
+  if (!mapInitialized) {
+    map.setView(latLng, 17);
+    mapInitialized = true;
+  } else if (mapFollowsTruck) {
+    map.panTo(latLng, { animate: true, duration: 0.4 });
+  }
+}
+
+function recenterMap() {
+  mapFollowsTruck = true;
+  if (lastGoodPosForMap) map.panTo(lastGoodPosForMap, { animate: true });
+}
+// Если водитель сам подвинул карту (посмотреть окрестности) — временно перестаём
+// дёргать её за собой, пока не нажмёт "прицел" (recenterBtn) заново.
+map.on('dragstart', () => { mapFollowsTruck = false; });
+let lastGoodPosForMap = null;
+
+// ─── Состояние ────────────────────────────────────────────────────────────────
+let watchId = null;          // id текущего watchPosition (ровно один, никогда не дублируется)
+let watchdogTimer = null;    // "сторож": проверяет, что GPS не молчит слишком долго
+let deviceId = "";
+let lastSentTime = 0;
+let lastSentPos = null;
+let lastFixTime = 0;         // время последнего ЛЮБОГО ответа от GPS (успех или ошибка)
+let wakeLock = null;
+let consecutiveBadAccuracy = 0;
+let restartCount = 0;
+let tracking = false;        // явный флаг "трекинг должен идти" — чтобы watchdog не воскрешал его после ручного "Стоп"
+
+const MIN_INTERVAL_MS = 5000;
+const MIN_DISTANCE_M = 15;
+const BASE_MAX_ACCURACY_M = 30;
+const RELAXED_MAX_ACCURACY_M = 80;
+const RELAX_AFTER_TRIES = 6;
+const WATCHDOG_CHECK_MS = 8000;   // как часто "сторож" проверяет пульс
+const WATCHDOG_STALE_MS = 25000;  // если GPS молчит дольше этого — принудительный перезапуск
+
+const statusEl = document.getElementById('status');
+const netEl = document.getElementById('netStatus');
+const accEl = document.getElementById('accStatus');
+const speedEl = document.getElementById('speedStatus');
+const battEl = document.getElementById('battStatus');
+const wakeEl = document.getElementById('wakeStatus');
+const lastSentEl = document.getElementById('lastSentStatus');
+const restartEl = document.getElementById('restartStatus');
+const queueEl = document.getElementById('queueStatus');
+const tipCard = document.getElementById('tipCard');
+const btnStart = document.getElementById('btnStart');
+const btnStop = document.getElementById('btnStop');
+
+// ─── Офлайн-буфер ──────────────────────────────────────────────────────────────
+const MAX_QUEUE_POINTS = 3000; // ~несколько суток трекинга даже при долгом офлайне — с запасом
+
+function getQueue() {
+  try { return JSON.parse(localStorage.getItem('gps_queue') || '[]'); }
+  catch (e) { return []; }
+}
+function saveToQueue(data) {
+  const q = getQueue();
+  q.push(data);
+  // Если очередь переросла лимит — выкидываем самые старые точки, а не новые:
+  // свежая позиция важнее, чем то, где машина была много часов назад.
+  const trimmed = q.length > MAX_QUEUE_POINTS ? q.slice(q.length - MAX_QUEUE_POINTS) : q;
+  try {
+    localStorage.setItem('gps_queue', JSON.stringify(trimmed));
+  } catch (e) {
+    // localStorage переполнен (редко, но бывает на старых телефонах) —
+    // режем очередь пополам и пробуем ещё раз, чтобы трекинг не встал совсем.
+    const half = trimmed.slice(Math.ceil(trimmed.length / 2));
+    try { localStorage.setItem('gps_queue', JSON.stringify(half)); } catch (e2) { /* сдаёмся, но не падаем */ }
+  }
+  updateQueueUI();
+}
+function clearQueue() { localStorage.removeItem('gps_queue'); updateQueueUI(); }
+function updateQueueUI() { queueEl.textContent = `${getQueue().length} точек`; }
+
+// ─── Событийная очередь (кнопки ОТВАЛ/ЗАБОЙ/ПОГРУЗКА/РАЗВОРОТ) ────────────────
+// Отдельная от gps_queue (треков), но по той же схеме: копим в localStorage,
+// отправляем пачками, переживает офлайн. Так проще — не нужно потом на
+// сервере разбирать, что где, и не рискуем сломать уже отлаженную track-очередь.
+const MAX_EVENT_QUEUE = 500; // событий по кнопкам за смену настолько много не бывает
+function getEventQueue() {
+  try { return JSON.parse(localStorage.getItem('gps_event_queue') || '[]'); }
+  catch (e) { return []; }
+}
+function saveEventToQueue(ev) {
+  const q = getEventQueue();
+  q.push(ev);
+  const trimmed = q.length > MAX_EVENT_QUEUE ? q.slice(q.length - MAX_EVENT_QUEUE) : q;
+  try { localStorage.setItem('gps_event_queue', JSON.stringify(trimmed)); } catch (e) { /* см. трек-очередь выше */ }
+}
+async function flushEventQueue() {
+  let q = getEventQueue();
+  if (q.length === 0) return;
+  while (q.length > 0) {
+    const chunk = q.slice(0, FLUSH_CHUNK_SIZE);
+    try {
+      const res = await fetch(`${API_BASE}/event_log.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': API_KEY },
+        body: JSON.stringify(chunk),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) { break; }
+    q = q.slice(chunk.length);
+    localStorage.setItem('gps_event_queue', JSON.stringify(q));
+  }
+}
+
+async function logEvent(eventType) {
+  if (!deviceId) { alert('Сначала укажите гос. номер и начните трекинг'); return; }
+  const feedback = document.getElementById('eventFeedback');
+  feedback.textContent = '📍 Определяю местоположение...';
+  feedback.style.color = '#94a3b8';
+
+  const useFix = (pos) => {
+    const ev = {
+      deviceId,
+      eventType,
+      lat: pos.lat,
+      lng: pos.lng,
+      accuracy: pos.accuracy ?? null,
+      ts: Date.now(),
+    };
+    saveEventToQueue(ev);
+    if (navigator.onLine) flushEventQueue();
+    feedback.textContent = `✅ ${eventType} отмечен`;
+    feedback.style.color = '#22c55e';
+    if (navigator.vibrate) navigator.vibrate(60);
+    setTimeout(() => { feedback.textContent = ''; }, 2500);
+  };
+
+  // Если трекинг уже идёт — не гоняем GPS второй раз, берём свежую живую точку.
+  if (lastGoodPos) { useFix(lastGoodPos); return; }
+
+  if (!navigator.geolocation) { feedback.textContent = '❌ GPS недоступен'; feedback.style.color = '#ef4444'; return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => useFix({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+    () => { feedback.textContent = '❌ Не удалось определить GPS'; feedback.style.color = '#ef4444'; },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// ─── Фоновый трек для будущего построения дорог (этап 2-3) ────────────────────
+// Пишем не каждый GPS-тик (это было бы слишком часто), а раз в TRACK_LOG_INTERVAL_MS.
+const TRACK_LOG_INTERVAL_MS = 12000;
+let lastTrackLogAt = 0;
+let trackLogBuffer = [];
+function maybeLogTrackPoint(lat, lng, accuracy, speed) {
+  const now = Date.now();
+  if (now - lastTrackLogAt < TRACK_LOG_INTERVAL_MS) return;
+  lastTrackLogAt = now;
+  trackLogBuffer.push({ deviceId, lat, lng, accuracy, speed: speed ?? null, ts: now });
+  if (trackLogBuffer.length >= 10 || navigator.onLine) flushTrackLog();
+}
+async function flushTrackLog() {
+  if (trackLogBuffer.length === 0) return;
+  const chunk = trackLogBuffer;
+  trackLogBuffer = [];
+  try {
+    const res = await fetch(`${API_BASE}/track_log.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': API_KEY },
+      body: JSON.stringify(chunk),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch (e) {
+    trackLogBuffer = chunk.concat(trackLogBuffer); // не потеряли — вернули в буфер, попробуем позже
+  }
+}
+
+// ─── Wake Lock: экран не гаснет, пока идёт трекинг ────────────────────────────
+async function acquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeEl.textContent = 'да ✅';
+      wakeLock.addEventListener('release', () => { wakeEl.textContent = 'отпущен'; });
+    } else {
+      wakeEl.textContent = 'не поддерживается';
+    }
+  } catch (e) {
+    wakeEl.textContent = 'не удалось';
+  }
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+  wakeEl.textContent = 'выкл';
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && tracking) {
+    if (!wakeLock) acquireWakeLock();
+    // Возвращаясь на вкладку — сразу проверим пульс GPS, не дожидаясь тика сторожа.
+    checkWatchdog();
+  }
+});
+
+async function sendUpdate(data) {
+  if (!navigator.onLine) { saveToQueue(data); return false; }
+  try {
+    const res = await fetch(`${API_BASE}/update.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': API_KEY },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return true;
+  } catch (e) {
+    saveToQueue(data);
+    return false;
+  }
+}
+
+const FLUSH_CHUNK_SIZE = 200; // отправляем накопленный буфер пачками, а не одним запросом
+
+async function flushQueue() {
+  let q = getQueue();
+  if (q.length === 0) return;
+  statusEl.innerHTML = `<span class="warn">📤 Отправка буфера (${q.length})...</span>`;
+
+  while (q.length > 0) {
+    const chunk = q.slice(0, FLUSH_CHUNK_SIZE);
+    try {
+      const res = await fetch(`${API_BASE}/flush.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': API_KEY },
+        body: JSON.stringify(chunk),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      break; // эта и оставшиеся пачки остаются в буфере, попробуем при следующем flush
+    }
+    // Успешно отправленную пачку убираем из буфера сразу, чтобы при обрыве
+    // посреди отправки не потерять и не задвоить уже ушедшие точки.
+    q = q.slice(chunk.length);
+    localStorage.setItem('gps_queue', JSON.stringify(q));
+    updateQueueUI();
+  }
+}
+
+window.addEventListener('online', () => { netEl.textContent = 'Online'; netEl.className = 'ok'; flushQueue(); flushEventQueue(); });
+window.addEventListener('offline', () => { netEl.textContent = 'Offline'; netEl.className = 'err'; });
+
+function updateLastSentTime() { lastSentEl.textContent = new Date().toLocaleTimeString(); }
+
+let useHighAccuracy = true; // переключается на приблизительный режим (по сети/Wi-Fi), если высокоточный долго не ловит
+let lowAccuracyTicks = 0;   // счётчик тиков сторожа в приблизительном режиме — чтобы иногда пробовать вернуться на точный GPS
+
+// ─── Единая точка запуска GPS: ВСЕГДА сначала останавливает предыдущий watch,
+// поэтому дублирующихся watchPosition() никогда не возникает, сколько бы раз
+// ни вызывалась эта функция (вручную, по ошибке, по сторожу — не важно). ───────
+function startWatch() {
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  if (!('geolocation' in navigator)) {
+    statusEl.innerHTML = '<span class="err">❌ GPS не поддерживается этим браузером</span>';
+    return;
+  }
+  lastFixTime = Date.now();
+  watchId = navigator.geolocation.watchPosition(onPosition, onGeoError, {
+    enableHighAccuracy: useHighAccuracy, maximumAge: 5000, timeout: 25000,
+  });
+}
+
+function onGeoError(err) {
+  lastFixTime = Date.now(); // ошибка — это тоже "пульс", GPS-подсистема жива, просто не поймала фикс
+  if (err.code === 1) { // PERMISSION_DENIED — тут авто-перезапуск бесполезен, нужно действие пользователя
+    statusEl.innerHTML = '<span class="err">❌ Доступ к GPS запрещён. Разрешите геолокацию в настройках браузера и нажмите «Начать» снова.</span>';
+    stopTracking();
+    return;
+  }
+  statusEl.innerHTML = useHighAccuracy
+    ? '<span class="warn">📶 Слабый сигнал (возможно, в помещении) — жду...</span>'
+    : '<span class="warn">📶 Определяю приблизительно по сети — жду...</span>';
+  tipCard.style.display = 'block';
+  // Сторож (watchdog) сам разберётся с перезапуском, если сигнал не появится долго —
+  // отдельный setTimeout тут не нужен, это как раз убирает риск дублирующихся перезапусков.
+}
+
+// ─── "Сторож": проверяет, что GPS реально живой, а не тихо завис ──────────────
+// Именно эта функция чинит баг "GPS time expired → зависание": раньше перезапуск
+// происходил только по явной ошибке от браузера, а Android иногда просто молча
+// перестаёт присылать обновления вообще без ошибки. Теперь мы сами следим за
+// временем последнего "пульса" и принудительно пересоздаём watch, если он пропал.
+//
+// Если высокоточный GPS не ловит несколько раз подряд (частый случай в помещении,
+// стены блокируют спутники) — переключаемся на приблизительное определение по
+// сети/Wi-Fi: работает хуже по точности, зато часто ловит там, где спутниковый
+// GPS вообще ничего не видит. Как только придёт нормальный точный фикс — сами
+// вернёмся обратно на высокую точность.
+function checkWatchdog() {
+  if (!tracking) return;
+  const idleMs = Date.now() - lastFixTime;
+  if (idleMs > WATCHDOG_STALE_MS) {
+    restartCount++;
+    restartEl.textContent = String(restartCount);
+    if (useHighAccuracy && restartCount >= 2) {
+      useHighAccuracy = false; // переходим на приблизительный режим по сети
+      lowAccuracyTicks = 0;
+      statusEl.innerHTML = '<span class="warn">📶 Спутниковый GPS не ловит — пробую определить приблизительно по сети...</span>';
+    } else if (!useHighAccuracy) {
+      lowAccuracyTicks++;
+      if (lowAccuracyTicks % 4 === 0) {
+        // раз в ~30 секунд пробуем вернуться на точный GPS — вдруг сигнал появился (вышел на улицу)
+        useHighAccuracy = true;
+        statusEl.innerHTML = '<span class="warn">📡 Проверяю, не появился ли точный GPS-сигнал...</span>';
+      } else {
+        statusEl.innerHTML = '<span class="warn">📶 Всё ещё жду сигнал (в помещении может не ловить вообще)...</span>';
+      }
+    } else {
+      statusEl.innerHTML = '<span class="warn">🔄 Перезапускаю GPS...</span>';
+    }
+    startWatch();
+  }
+}
+function startWatchdog() {
+  stopWatchdog();
+  watchdogTimer = setInterval(checkWatchdog, WATCHDOG_CHECK_MS);
+}
+function stopWatchdog() { clearInterval(watchdogTimer); watchdogTimer = null; }
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2 - lat1) * Math.PI/180;
+  const Δλ = (lng2 - lng1) * Math.PI/180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+let lastGoodPos = null;      // последняя точка, прошедшая фильтр точности (для heartbeat на стоянке)
+let lastHeartbeatTime = 0;
+const HEARTBEAT_MS = 20000;  // если стоим и не проходит ни одна свежая точка — всё равно "напоминаем о себе" раз в 20 сек
+const STATIONARY_AGREE_M = 25; // если новая "плохая" точка близко к прошлой хорошей — считаем это подтверждением стоянки, а не шумом
+
+async function onPosition(pos) {
+  lastFixTime = Date.now();
+  const { latitude, longitude, speed, heading, accuracy } = pos.coords;
+  const ts = Date.now();
+
+  // На стоянке (ожидание погрузки и т.п.) телефон часто специально ухудшает точность GPS
+  // для экономии батареи — это нормально, не поломка. Поэтому: если новая точка (даже с
+  // "плохой" точностью) недалеко от последней ХОРОШЕЙ точки — считаем это подтверждением,
+  // что машина просто стоит на месте, а не шумом/ошибкой.
+  const maxAcc = consecutiveBadAccuracy >= RELAX_AFTER_TRIES ? RELAXED_MAX_ACCURACY_M : BASE_MAX_ACCURACY_M;
+  const agreesWithLastGood = lastGoodPos && haversineMeters(latitude, longitude, lastGoodPos.lat, lastGoodPos.lng) <= STATIONARY_AGREE_M;
+
+  if (accuracy > maxAcc && !agreesWithLastGood) {
+    consecutiveBadAccuracy++;
+    accEl.textContent = `${Math.round(accuracy)}м (игнор)`;
+    accEl.className = 'err';
+    tipCard.style.display = consecutiveBadAccuracy >= 3 ? 'block' : 'none';
+    // Даже если саму точку игнорируем — не даём машине "пропасть" с карты: раз в
+    // HEARTBEAT_MS шлём последнюю известную хорошую позицию как "я на месте, стою".
+    if (lastGoodPos && ts - lastHeartbeatTime >= HEARTBEAT_MS) {
+      lastHeartbeatTime = ts;
+      const data = { lat: lastGoodPos.lat, lng: lastGoodPos.lng, speed: 0, heading: lastGoodPos.heading||0, accuracy: Math.round(accuracy), battery: null, ts, device: deviceId, status: "Стоит" };
+      await sendUpdate(data);
+      updateLastSentTime();
+      statusEl.innerHTML = '<span class="ok"><span class="pulse"></span>Трекинг активен (стоянка)</span>';
+    }
+    return;
+  }
+  consecutiveBadAccuracy = 0;
+  restartCount = 0;
+  restartEl.textContent = '0';
+  tipCard.style.display = 'none';
+  accEl.textContent = agreesWithLastGood ? `~${Math.round(accuracy)}м (стоянка)` : `±${Math.round(accuracy)}м`;
+  accEl.className = 'ok';
+  lastGoodPos = { lat: latitude, lng: longitude, heading };
+  updateMapPosition(latitude, longitude, heading, speed ? Math.round(speed * 3.6) : 0);
+  maybeLogTrackPoint(latitude, longitude, Math.round(accuracy), speed ? Math.round(speed * 3.6) : 0);
+
+  let shouldSend = false;
+  if (ts - lastSentTime >= MIN_INTERVAL_MS) {
+    shouldSend = true;
+  } else if (lastSentPos) {
+    const distance = haversineMeters(latitude, longitude, lastSentPos.lat, lastSentPos.lng);
+    if (distance > MIN_DISTANCE_M) shouldSend = true;
+  }
+
+  const speedKmh = speed ? Math.round(speed * 3.6) : 0;
+  const status = speedKmh > 3 ? "Едет" : "Стоит";
+  speedEl.textContent = `${speedKmh} км/ч (${status})`;
+  speedEl.className = status === "Едет" ? "ok" : "warn";
+
+  let battery = null;
+  if (navigator.getBattery) {
+    try { const b = await navigator.getBattery(); battery = Math.round(b.level * 100); } catch(e){}
+  }
+  if (battery != null) battEl.textContent = `${battery}%`;
+
+  if (shouldSend) {
+    lastSentTime = ts;
+    lastHeartbeatTime = ts;
+    lastSentPos = { lat: latitude, lng: longitude };
+    const data = { lat: latitude, lng: longitude, speed: speedKmh, heading: heading||0, accuracy: Math.round(accuracy), battery, ts, device: deviceId, status };
+    const ok = await sendUpdate(data);
+    updateLastSentTime();
+    statusEl.innerHTML = ok
+      ? '<span class="ok"><span class="pulse"></span>Трекинг активен</span>'
+      : '<span class="warn">💾 Сохранено локально (нет связи)</span>';
+  }
+}
+
+async function beginTracking(id) {
+  deviceId = id;
+  tracking = true;
+  restartCount = 0;
+  restartEl.textContent = '0';
+  localStorage.setItem('quarry_device_id', deviceId);
+  localStorage.setItem('quarry_should_track', '1'); // переживает выключение экрана / перезапуск браузера
+  btnStart.style.display = 'none';
+  btnStop.style.display = 'block';
+  document.getElementById('deviceId').disabled = true;
+  statusEl.innerHTML = '<span class="ok">📡 Запрос разрешения GPS...</span>';
+  await acquireWakeLock();
+  startWatch();
+  startWatchdog();
+}
+
+window.startTracking = async function() {
+  const id = document.getElementById('deviceId').value.trim().toUpperCase();
+  if (!id) { alert('Введи гос. номер!'); return; }
+
+  // Показываем "выезд на трассу", пока запрашиваем разрешение GPS и стартуем
+  // трекинг в фоне — так ожидание не выглядит как зависшая пустая страница.
+  document.getElementById('connectPlate').textContent = id;
+  const overlay = document.getElementById('connectOverlay');
+  overlay.classList.add('active');
+
+  await beginTracking(id);
+
+  setTimeout(() => { overlay.classList.remove('active'); }, 2300);
+};
+
+window.stopTracking = function() {
+  tracking = false;
+  localStorage.setItem('quarry_should_track', '0'); // явная ручная остановка — авто-возобновление больше не должно срабатывать
+  stopWatchdog();
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  releaseWakeLock();
+  btnStart.style.display = 'block';
+  btnStop.style.display = 'none';
+  document.getElementById('deviceId').disabled = false;
+  statusEl.innerHTML = '⏹ Остановлено';
+  tipCard.style.display = 'none';
+};
+
+// ─── Авто-возобновление: сайт САМ себя запустить при включении телефона не может —
+// это ограничение браузера/Android, так у всех сайтов без исключения. Но если водитель
+// НЕ нажимал "Стоп" сам, то при любом возврате на эту страницу (открыл заново после
+// перезагрузки, разблокировал экран, вернулся из другого приложения) — трекинг
+// возобновляется САМ, без единого нажатия. Разрешение на GPS браузер помнит сам.
+async function tryAutoResume(reason) {
+  if (tracking) return; // уже идёт — ничего делать не надо
+  const shouldTrack = localStorage.getItem('quarry_should_track') === '1';
+  const saved = localStorage.getItem('quarry_device_id');
+  if (!shouldTrack || !saved) return;
+  if (!navigator.permissions) return;
+  try {
+    const result = await navigator.permissions.query({ name: 'geolocation' });
+    if (result.state === 'granted') {
+      document.getElementById('deviceId').value = saved;
+      await beginTracking(saved);
+    }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tryAutoResume('visible'); });
+window.addEventListener('pageshow', () => tryAutoResume('pageshow'));
+window.addEventListener('focus', () => tryAutoResume('focus'));
+
+// ─── Автозапуск: по QR-ссылке (?device=...) или по ранее сохранённому номеру ─
+window.addEventListener('load', () => {
+  updateQueueUI();
+  if (getQueue().length > 0 && navigator.onLine) flushQueue();
+  if (getEventQueue().length > 0 && navigator.onLine) flushEventQueue();
+
+  const params = new URLSearchParams(location.search);
+  const fromQr = params.get('device');
+  const saved = localStorage.getItem('quarry_device_id');
+  const deviceToUse = fromQr ? fromQr.trim().toUpperCase() : saved;
+
+  if (deviceToUse) document.getElementById('deviceId').value = deviceToUse;
+
+  if (deviceToUse && navigator.permissions) {
+    navigator.permissions.query({ name: 'geolocation' }).then(result => {
+      if (result.state === 'granted') beginTracking(deviceToUse);
+      else if (fromQr) statusEl.innerHTML = '<span class="warn">Нажми «Начать трекинг» и разреши GPS</span>';
+    });
+  }
+});
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {}); // офлайн-кэш оболочки — не критично, если не встанет
+  });
+}
+</script>
+</body>
+</html>
